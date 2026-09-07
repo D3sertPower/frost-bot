@@ -70,7 +70,7 @@ manager.on('newOffer', (offer) => {
         return;
       }
       for (var item of items) {
-      addInventoryItem(offer.partner.getSteamID64(), item)
+      addInventoryItem(offer.partner.getSteamID64(), item.name)
       }
       console.log(`Offer #${offer.id} successfully accepted! Status: ${status}`);
     });
