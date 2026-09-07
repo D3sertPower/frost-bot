@@ -1,7 +1,5 @@
-const INVENTORY = new Map([
-    ['76561198874586215', ['The Frosty Ban Hammer', 'Empty Water Bottle']]
-])
-const INVENTORY_RESERVATIONS = new Map()
+const { getInventoryStore } = require('../inventory-store');
+const INVENTORY = getInventoryStore()
 const { getCurrentInteraction } = require('../interactions');
 const { pre, quote } = require('../chat-format');
 const {
@@ -34,105 +32,37 @@ function setInventory(steamId, items=[]) {
 }
 
 function addInventoryItem(steamId, item) {
-    const inventory = getInventory(steamId)
-    inventory.push(item)
-    setInventory(steamId, inventory)
+    INVENTORY.add(steamId, item)
 }
 
 function getReservations(steamId) {
-    return Array.from(INVENTORY_RESERVATIONS.values()).filter(
-        reservation => reservation.steamId === String(steamId)
-    )
+    return INVENTORY.getReservations(steamId)
 }
 
 function getAvailableInventory(steamId) {
-    const available = getInventory(steamId)
-
-    for (const reservation of getReservations(steamId)) {
-        const itemIndex = available.findIndex(
-            item => item.toLowerCase() === reservation.item.toLowerCase()
-        )
-
-        if (itemIndex !== -1) {
-            available.splice(itemIndex, 1)
-        }
-    }
-
-    return available
+    return INVENTORY.getAvailable(steamId)
 }
 
 function reserveInventoryItem(steamId, requestedItem, offerId) {
-    const normalizedItem = String(requestedItem).trim().toLowerCase()
-    const item = getAvailableInventory(steamId).find(
-        inventoryItem => inventoryItem.toLowerCase() === normalizedItem
-    )
-
-    if (!item) {
-        return null
-    }
-
-    INVENTORY_RESERVATIONS.set(String(offerId), {
-        offerId: String(offerId),
-        steamId: String(steamId),
-        item,
-    })
-    return item
+    return INVENTORY.reserve(steamId, requestedItem, offerId)
 }
 
 function releaseInventoryReservation(offerId) {
-    return INVENTORY_RESERVATIONS.delete(String(offerId))
+    return INVENTORY.releaseReservation(offerId)
 }
 
 function transferReservedInventoryItem(offerId, toSteamId) {
-    const reservation = INVENTORY_RESERVATIONS.get(String(offerId))
-    if (!reservation) {
-        return false
-    }
-
-    const sourceInventory = getInventory(reservation.steamId)
-    const itemIndex = sourceInventory.findIndex(
-        item => item.toLowerCase() === reservation.item.toLowerCase()
-    )
-
-    if (itemIndex === -1) {
-        return false
-    }
-
-    const [item] = sourceInventory.splice(itemIndex, 1)
-    const targetInventory = getInventory(toSteamId)
-    targetInventory.push(item)
-
-    setInventory(reservation.steamId, sourceInventory)
-    setInventory(toSteamId, targetInventory)
-    INVENTORY_RESERVATIONS.delete(String(offerId))
-    return true
+    return INVENTORY.transferReserved(offerId, toSteamId)
 }
 
 function clearInventoryReservations() {
-    INVENTORY_RESERVATIONS.clear()
+    INVENTORY.clearReservations()
 }
 
 function transferInventoryItem(fromSteamId, toSteamId, requestedItem) {
-    const sourceInventory = getInventory(fromSteamId)
-    const normalizedItem = String(requestedItem).trim().toLowerCase()
-    const itemIndex = sourceInventory.findIndex(
-        item => item.toLowerCase() === normalizedItem
-    )
-
-    if (itemIndex === -1) {
-        return false
-    }
-
-    const [item] = sourceInventory.splice(itemIndex, 1)
-    const targetInventory = getInventory(toSteamId)
-    targetInventory.push(item)
-
-    setInventory(fromSteamId, sourceInventory)
-    setInventory(toSteamId, targetInventory)
-    return true
+    return INVENTORY.transfer(fromSteamId, toSteamId, requestedItem)
 }
 
-// TODO: O INVENTÁRIO É CARREGADO DE UM BANCO DE DADOS REAL
 function updateInventory(steamId, item=[], alreadyExists=false) {
     /**Função para criar/atualizar um inventário
      * Se não houver inventário para o usuário, é criado um.
@@ -144,13 +74,10 @@ function updateInventory(steamId, item=[], alreadyExists=false) {
      * @returns {void} - A função apenas atualiza os inventários, não há retornos.
      */
     if (alreadyExists) {
-        var inv = INVENTORY.get(steamId)
-        inv.push(item)
-        INVENTORY.set(steamId, inv)
-        console.log(INVENTORY)
+        addInventoryItem(steamId, item)
         return
      }
-    INVENTORY.set(steamId,item)
+    setInventory(steamId, item)
     console.log(`Inventário atualizado para o usuário ${steamId}`)
     console.log(INVENTORY.get(steamId))
 }

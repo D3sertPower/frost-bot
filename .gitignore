@@ -5,4 +5,8 @@ data/cell*
 data/pay*
 data/api*
 data/groups*
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 npm-debug.log*

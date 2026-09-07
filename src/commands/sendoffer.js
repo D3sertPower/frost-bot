@@ -10,14 +10,12 @@ const {
   profileMatches,
   resolveLeadingFriend,
 } = require('../steam-friends');
-const {
-  clearInventoryReservations,
-  releaseInventoryReservation,
-  reserveInventoryItem,
-  transferReservedInventoryItem,
-} = require('./inv');
+const { getInventoryStore } = require('../inventory-store');
+const inventoryStore = getInventoryStore();
 
-const ACTIVE_OFFERS = new Map();
+const ACTIVE_OFFERS = new Map(
+  inventoryStore.getOffers().map(offer => [offer.transaction_id, offer]),
+);
 const ACCEPT_ALIASES = new Set(['accept', 'acceptoffer', 'aceitar']);
 const DECLINE_ALIASES = new Set(['decline', 'declineoffer', 'recusar']);
 const LIST_ALIASES = new Set(['offers', 'myoffers', 'ofertas']);
@@ -161,37 +159,31 @@ async function decideOffer(action, offerID, recipient) {
     ]);
   }
 
-  if (offer.offeree_sid !== recipient) {
+  const result = inventoryStore.decideOffer(offer.transaction_id, recipient, action);
+  if (result.offer) Object.assign(offer, result.offer);
+
+  if (result.code === 'forbidden') {
     return quote('🔒 Only the intended recipient can accept or decline this offer.');
   }
 
-  if (offer.status !== 'pending') {
+  if (result.code === 'already_decided') {
     return quote([
       `ℹ️ This offer was already ${offer.status}.`,
       `🧾 Offer ID: ${offer.transaction_id}`,
     ]);
   }
 
-  if (action === 'accepted') {
-    const transferred = transferReservedInventoryItem(
-      offer.transaction_id,
-      offer.offeree_sid,
-    );
-
-    if (!transferred) {
-      return quote([
-        '⚠️ The offer is still pending, but the item is no longer in the sender’s inventory.',
-        '🧊 Nothing was transferred. Please contact the sender.',
-      ]);
-    }
+  if (result.code === 'missing_item') {
+    return quote([
+      '⚠️ The offer is still pending, but the item is no longer in the sender’s inventory.',
+      '🧊 Nothing was transferred. Please contact the sender.',
+    ]);
   }
 
-  if (action === 'declined') {
-    releaseInventoryReservation(offer.transaction_id);
+  if (result.code === 'not_found') {
+    return quote('📭 No matching offer was found.');
   }
 
-  offer.status = action;
-  offer.decided_at = new Date();
   await sendUserMessage(offer.offeror_sid, senderDecisionMessage(offer));
 
   if (action === 'accepted') {
@@ -353,27 +345,21 @@ async function createInternalOffer({
   }
 
   const transactionId = uuidv4();
-  const reservedItem = reserveInventoryItem(
-    offeror,
-    item,
+  const tradeOffer = inventoryStore.createOffer(new Offer(
     transactionId,
-  );
+    item,
+    offeror,
+    offeree,
+    offerorName,
+    offereeName,
+  ));
 
-  if (!reservedItem) {
+  if (!tradeOffer) {
     return quote([
       '🔒 That item was reserved by another offer just now.',
       '🔄 Refresh !inventory and choose an available item.',
     ]);
   }
-
-  const tradeOffer = new Offer(
-    transactionId,
-    reservedItem,
-    offeror,
-    offeree,
-    offerorName,
-    offereeName,
-  );
 
   ACTIVE_OFFERS.set(transactionId, tradeOffer);
   const recipientNotified = await sendUserMessage(
@@ -447,10 +433,10 @@ async function continueSendOfferInteraction(text, steamID64) {
 }
 
 function clearOfferState() {
+  inventoryStore.clearOffers();
   ACTIVE_OFFERS.clear();
   pendingOfferDecisions.clear();
   pendingRecipientSelections.clear();
-  clearInventoryReservations();
 }
 
 module.exports = {
